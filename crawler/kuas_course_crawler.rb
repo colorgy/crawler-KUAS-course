@@ -2,6 +2,9 @@ require 'crawler_rocks'
 require 'json'
 require 'pry'
 
+require 'thread'
+require 'thwait'
+
 class KuasCourseCrawler
 
   DAYS = {
@@ -132,12 +135,13 @@ class KuasCourseCrawler
             name: data[1],    # 課程名稱
             lecturer: data[8],    # 授課教師
             credits: data[3][0].to_i,    # 學分數
-            code: "#{@year}-#{@term}-#{dep_c}-?(#{data[0].scan(/\w+/)[0]})?",
+            code: "#{@year}-#{@term}-#{dep_c}-#{data[0].scan(/\w+/)[0]}",
             # general_code: data[0],    # 選課代碼
+            general_code: data[0].scan(/\w+/)[0],
             url: syllabus_url,    # 課程大綱之類的連結(如果有的話)
             required: data[5].include?('必'),    # 必修或選修
             department: dep_n,    # 開課系所
-            # department_code: dep_c,
+            department_code: dep_c,
             day_1: course_days[0],
             day_2: course_days[1],
             day_3: course_days[2],
@@ -165,15 +169,23 @@ class KuasCourseCrawler
             location_7: course_locations[6],
             location_8: course_locations[7],
             location_9: course_locations[8],
-            }
+          }
 
-          @after_each_proc.call(course: course) if @after_each_proc
+          sleep(1) until (
+            @threads.delete_if { |t| !t.status };  # remove dead (ended) threads
+            @threads.count < ( (ENV['MAX_THREADS'] && ENV['MAX_THREADS'].to_i) || 30)
+          )
+          @threads << Thread.new do
+            @after_each_proc.call(course: course) if @after_each_proc
+          end
 
           @courses << course
     # binding.pry if dep_c == "UE233311"
         end
       end
     end
+    ThreadsWait.all_waits(*@threads)
+
     @courses
   end
 end
